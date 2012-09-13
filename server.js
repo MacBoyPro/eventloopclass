@@ -17,7 +17,6 @@ syscalls.bind(fd, 3000, "0.0.0.0");
 //file descriptor of the socket, size of backlog - incoming connections waiting in the OS queue
 syscalls.listen(fd, 100); //now listening for incoming connections
 
-
 while(true) {
   var connFd = syscalls.accept(fd); // accepting the incoming connection and returning a reference to the remote connection
   console.log("Accepted new connection");
