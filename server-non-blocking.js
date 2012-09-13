@@ -20,26 +20,63 @@ syscalls.bind(fd, 3000, "0.0.0.0");
 //file descriptor of the socket, size of backlog - incoming connections waiting in the OS queue
 syscalls.listen(fd, 100); //now listening for incoming connections
 
-while(true) {
+console.log('listing on port 3000');
+
+var readables = {}; //{fd: callback}
+var writeables = {}; //{fd: callback}
+
+
+
+readables[fd] = function() {
   /*
    * 1) file descriptor for readability
    * 2) file descriptor for writeability
    * 3) file descriptor for error
    * 4) timeout
    */
-  syscalls.select([fd], [], [], 0); // I/O Multiplexing - multiple signals are becoming 1 - blocking call
   var connFd = syscalls.accept(fd); // accepting the incoming connection and returning a reference to the remote connection
   syscalls.fcntl(connFd, syscalls.F_SETFL, syscalls.O_NONBLOCK); //turning the file descriptor into a non-blocking socket
   console.log("Accepted new connection");
 
-  syscalls.select([connFd], [], [], 0); // I/O Multiplexing - multiple signals are becoming 1 - blocking call
-  var data = syscalls.read(connFd, 1024); //read from remote connection
-  console.log('Received: ' + data);
+  readables[connFd] = function() {
+    var data = syscalls.read(connFd, 1024); //read from remote connection
+    console.log('Received: ' + data);
+    delete readables[connFd];
 
-  syscalls.select([], [connFd], [], 0); // I/O Multiplexing - multiple signals are becoming 1 - blocking call
-  syscalls.write(connFd, "bye!\n"); //write to remote connection
+    writeables[connFd] = function() {
+      syscalls.write(connFd, "bye!\n"); //write to remote connection
 
-  syscalls.close(connFd); //close remote connection
+      syscalls.close(connFd); //close remote connection
+      delete writeables[connFd];
+    }
+  }
+}
+
+// Here is the event LOOP!
+while(true) {
+  var fds = syscalls.select(Object.keys(readables), Object.keys(writeables), [], 0);
+  
+ /* fds = [
+    [readables],
+    [writeables],
+    [errors]
+  ] */
+
+ var readableFds = fds[0];
+ var writeableFds = fds[1];
+
+ for (var i = 0; i < readableFds.length; i += 1) {
+   var fd = readableFds[i];
+   var callback = readables[fd];
+   callback();
+ }
+
+  for (var i = 0; i < writeableFds.length; i += 1) {
+   var fd = writeableFds[i];
+   var callback = writeables[fd];
+   callback();
+ }
+
 }
 
 syscalls.close(fd); // the OS will do this for us because it will cleanup after the process once it ends
